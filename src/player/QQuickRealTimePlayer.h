@@ -10,8 +10,10 @@
 #include "GifEncoder.h"
 #include "Mp4Encoder.h"
 #include "FramePipeWriter.h"
+//#include "FrameSocketSender.h"
 
 class TItemRender;
+class FrameSocketSender;
 
 class QQuickRealTimePlayer : public QQuickFramebufferObject {
     Q_OBJECT
@@ -109,4 +111,5 @@ public:
     bool m_infoChanged = false;
 
     FramePipeWriter frameWriter;
+    FrameSocketSender* frameSender;
 };

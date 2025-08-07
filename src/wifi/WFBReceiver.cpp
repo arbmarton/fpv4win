@@ -222,6 +222,13 @@ void WFBReceiver::handleRtp(uint8_t *payload, uint16_t packet_size) {
     // send video to player
     sendto(
         sendFd, reinterpret_cast<const char *>(payload), packet_size, 0, (sockaddr *)&serverAddr, sizeof(serverAddr));
+    //const auto playerPort = QmlNativeAPI::Instance().playerPort + 1;
+    //sockaddr_in pythonAddr{};
+    //pythonAddr.sin_family = AF_INET;
+    //pythonAddr.sin_port = htons(playerPort);  // e.g., 5601
+    //pythonAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    //sendto(sendFd, reinterpret_cast<const char*>(payload), packet_size, 0,
+    //    (sockaddr*)&pythonAddr, sizeof(pythonAddr));
 }
 
 bool WFBReceiver::Stop() {

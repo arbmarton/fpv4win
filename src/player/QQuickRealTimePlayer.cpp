@@ -1,6 +1,7 @@
 ﻿
 #include "QQuickRealTimePlayer.h"
 #include "JpegEncoder.h"
+#include "FrameSocketSender.h"
 #include <QDir>
 #include <QOpenGLFramebufferObject>
 #include <QQuickWindow>
@@ -182,7 +183,9 @@ QQuickRealTimePlayer::QQuickRealTimePlayer(QQuickItem *parent)
     SDL_Init(SDL_INIT_AUDIO);
     // 按每秒60帧的帧率更新界面
     startTimer(1000 / 100);
-    frameWriter.initialize();
+    //frameWriter.initialize();
+    frameSender = new FrameSocketSender();
+    frameSender->initialize();
 }
 
 void QQuickRealTimePlayer::timerEvent(QTimerEvent *event) {
@@ -255,7 +258,8 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
                         continue;
                     }
                     //SaveFrameAsBMP(frame, "last_frame.bmp");
-                    frameWriter.sendFrame(frame);
+                    //frameWriter.sendFrame(frame);
+                    frameSender->sendFrame(frame);
                     {
                         // 解码获取到视频帧,放入帧缓冲队列
                         lock_guard<mutex> lck(mtx);
@@ -334,6 +338,7 @@ void QQuickRealTimePlayer::setMuted(bool muted) {
 
 QQuickRealTimePlayer::~QQuickRealTimePlayer() {
     stop();
+    delete frameSender;
 }
 
 QString QQuickRealTimePlayer::captureJpeg() {
