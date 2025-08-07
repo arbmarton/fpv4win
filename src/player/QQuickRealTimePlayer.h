@@ -9,8 +9,6 @@
 
 #include "GifEncoder.h"
 #include "Mp4Encoder.h"
-#include "FramePipeWriter.h"
-//#include "FrameSocketSender.h"
 
 class TItemRender;
 class FrameSocketSender;
@@ -110,6 +108,5 @@ public:
     int m_videoFormat {};
     bool m_infoChanged = false;
 
-    FramePipeWriter frameWriter;
     FrameSocketSender* frameSender;
 };
