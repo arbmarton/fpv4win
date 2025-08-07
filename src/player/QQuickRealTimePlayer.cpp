@@ -11,6 +11,117 @@
 // GIF默认帧率
 #define DEFAULT_GIF_FRAMERATE 10
 
+bool SaveFrameAsBMP(const std::shared_ptr<AVFrame>& frame, const std::string& filename) {
+    if (!frame || !frame->data[0]) {
+        return false;
+    }
+
+    // Convert to RGB24 using sws_scale (you already have this working)
+    SwsContext* swsCtx = sws_getContext(
+        frame->width, frame->height, static_cast<AVPixelFormat>(frame->format),
+        frame->width, frame->height, AV_PIX_FMT_RGB24,
+        SWS_BILINEAR, nullptr, nullptr, nullptr
+    );
+
+    if (!swsCtx) {
+        return false;
+    }
+
+    // Allocate RGB buffer - using simple new/delete (no FFmpeg allocation functions)
+    int rgbLinesize = frame->width * 3; // RGB24 = 3 bytes per pixel
+    uint8_t* rgbBuffer = new uint8_t[rgbLinesize * frame->height];
+    uint8_t* rgbData[1] = { rgbBuffer };
+    int rgbLineSize[1] = { rgbLinesize };
+
+    // Convert YUV to RGB using sws_scale
+    sws_scale(swsCtx, frame->data, frame->linesize, 0, frame->height,
+        rgbData, rgbLineSize);
+
+    // Save as BMP format
+    FILE* file = fopen(filename.c_str(), "wb");
+    bool success = false;
+
+    if (file) {
+        // Calculate file size
+        int rowSize = ((frame->width * 3 + 3) / 4) * 4; // BMP rows must be multiple of 4 bytes
+        int imageSize = rowSize * frame->height;
+        int fileSize = 54 + imageSize;
+
+        // Create BMP header (54 bytes)
+        uint8_t bmpHeader[54] = { 0 };
+
+        // BMP signature
+        bmpHeader[0] = 'B';
+        bmpHeader[1] = 'M';
+
+        // File size (little endian)
+        bmpHeader[2] = fileSize & 0xFF;
+        bmpHeader[3] = (fileSize >> 8) & 0xFF;
+        bmpHeader[4] = (fileSize >> 16) & 0xFF;
+        bmpHeader[5] = (fileSize >> 24) & 0xFF;
+
+        // Reserved fields (4 bytes) - already zero
+
+        // Data offset
+        bmpHeader[10] = 54;
+
+        // DIB header size
+        bmpHeader[14] = 40;
+
+        // Width (little endian)
+        bmpHeader[18] = frame->width & 0xFF;
+        bmpHeader[19] = (frame->width >> 8) & 0xFF;
+        bmpHeader[20] = (frame->width >> 16) & 0xFF;
+        bmpHeader[21] = (frame->width >> 24) & 0xFF;
+
+        // Height (little endian)
+        bmpHeader[22] = frame->height & 0xFF;
+        bmpHeader[23] = (frame->height >> 8) & 0xFF;
+        bmpHeader[24] = (frame->height >> 16) & 0xFF;
+        bmpHeader[25] = (frame->height >> 24) & 0xFF;
+
+        // Planes
+        bmpHeader[26] = 1;
+
+        // Bits per pixel
+        bmpHeader[28] = 24;
+
+        // Compression (0 = no compression)
+        // Image size
+        bmpHeader[34] = imageSize & 0xFF;
+        bmpHeader[35] = (imageSize >> 8) & 0xFF;
+        bmpHeader[36] = (imageSize >> 16) & 0xFF;
+        bmpHeader[37] = (imageSize >> 24) & 0xFF;
+
+        // Write header
+        fwrite(bmpHeader, 1, 54, file);
+
+        // Write image data (BMP stores rows bottom-to-top and in BGR format)
+        for (int y = frame->height - 1; y >= 0; y--) {
+            for (int x = 0; x < frame->width; x++) {
+                uint8_t* pixel = rgbBuffer + (y * rgbLinesize) + (x * 3);
+                // Write BGR (BMP format)
+                fputc(pixel[2], file); // B
+                fputc(pixel[1], file); // G
+                fputc(pixel[0], file); // R
+            }
+            // Pad row to 4-byte boundary
+            int padding = rowSize - (frame->width * 3);
+            for (int p = 0; p < padding; p++) {
+                fputc(0, file);
+            }
+        }
+
+        fclose(file);
+        success = true;
+    }
+
+    // Cleanup
+    delete[] rgbBuffer;
+    sws_freeContext(swsCtx);
+    return success;
+}
+
 //************TaoItemRender************//
 class TItemRender : public QQuickFramebufferObject::Renderer {
 public:
@@ -71,6 +182,7 @@ QQuickRealTimePlayer::QQuickRealTimePlayer(QQuickItem *parent)
     SDL_Init(SDL_INIT_AUDIO);
     // 按每秒60帧的帧率更新界面
     startTimer(1000 / 100);
+    frameWriter.initialize();
 }
 
 void QQuickRealTimePlayer::timerEvent(QTimerEvent *event) {
@@ -142,6 +254,8 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
                     if (!frame) {
                         continue;
                     }
+                    //SaveFrameAsBMP(frame, "last_frame.bmp");
+                    frameWriter.sendFrame(frame);
                     {
                         // 解码获取到视频帧,放入帧缓冲队列
                         lock_guard<mutex> lck(mtx);

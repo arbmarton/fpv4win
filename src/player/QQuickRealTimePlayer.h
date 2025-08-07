@@ -9,6 +9,7 @@
 
 #include "GifEncoder.h"
 #include "Mp4Encoder.h"
+#include "FramePipeWriter.h"
 
 class TItemRender;
 
@@ -106,4 +107,6 @@ public:
     int m_videoHeight {};
     int m_videoFormat {};
     bool m_infoChanged = false;
+
+    FramePipeWriter frameWriter;
 };
