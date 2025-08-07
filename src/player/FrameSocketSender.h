@@ -15,6 +15,7 @@ public:
     FrameSocketSender();
 
     bool initialize(int port = 8888);
+    bool isConnected() const { return connected; }
 
     bool sendFrame(const std::shared_ptr<AVFrame>& frame);
 

@@ -185,7 +185,6 @@ QQuickRealTimePlayer::QQuickRealTimePlayer(QQuickItem *parent)
     startTimer(1000 / 100);
     //frameWriter.initialize();
     frameSender = new FrameSocketSender();
-    frameSender->initialize();
 }
 
 void QQuickRealTimePlayer::timerEvent(QTimerEvent *event) {
@@ -256,6 +255,9 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
                     auto frame = decoder->GetNextFrame();
                     if (!frame) {
                         continue;
+                    }
+                    if (!frameSender->isConnected()) {
+                        frameSender->initialize();
                     }
                     //SaveFrameAsBMP(frame, "last_frame.bmp");
                     //frameWriter.sendFrame(frame);
