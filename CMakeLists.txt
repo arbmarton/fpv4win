@@ -51,6 +51,8 @@ target_link_libraries(${PROJECT_NAME}
         PkgConfig::LIBUSB
         unofficial-sodium::sodium)
 
+target_compile_options(${PROJECT_NAME} PRIVATE /MP)
+
 if (WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(DEBUG_SUFFIX)
     if (MSVC AND CMAKE_BUILD_TYPE MATCHES "Debug")
