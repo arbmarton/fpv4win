@@ -65,7 +65,7 @@ public:
     // 音频采样率
     int GetAudioSampleRate() const { return pAudioCodecCtx->sample_rate; }
     // 音频声道数
-    int GetAudioChannelCount() const { return pAudioCodecCtx->ch_layout.nb_channels; }
+    int GetAudioChannelCount() const { return pAudioCodecCtx->channels; }
     // 音频样本格式
     AVSampleFormat GetAudioSampleFormat() const { return AV_SAMPLE_FMT_S16; }
     // 视频帧格式
@@ -164,7 +164,7 @@ private:
 
     // 音频队列
     mutex abBuffMtx;
-    shared_ptr<AVFifo> audioFifoBuffer;
+    shared_ptr<AVFifoBuffer> audioFifoBuffer;
 
     // 硬件解码
     enum AVHWDeviceType hwDecoderType;
@@ -172,7 +172,7 @@ private:
     enum AVPixelFormat hwPixFmt;
     AVBufferRef *hwDeviceCtx = nullptr;
     volatile bool dropCurrentVideoFrame = false;
-    // Hardware frame
+    // 初始化硬件解码frame
     shared_ptr<AVFrame> hwFrame;
 };
 
