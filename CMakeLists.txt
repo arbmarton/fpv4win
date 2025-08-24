@@ -39,14 +39,13 @@ add_executable(${PROJECT_NAME} ${SRC_LIST} qml.qrc)
 
 target_link_libraries(${PROJECT_NAME}
         Qt5::Quick
-        #${FFMPEG_LIBRARIES}
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/avcodec.lib"
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/avdevice.lib"
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/avfilter.lib"
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/avformat.lib"
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/avutil.lib"
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/swscale.lib"
-        "f:/Dev/fpv4win_src/fpv4win/vcpkg/installed/x64-windows/lib/swresample.lib"
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/avcodec.lib
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/avdevice.lib
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/avfilter.lib
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/avformat.lib
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/avutil.lib
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/swscale.lib
+        ${CMAKE_CURRENT_LIST_DIR}/vcpkg/installed/x64-windows/lib/swresample.lib
         ${SDL2_LIBRARIES}
         PkgConfig::LIBUSB
         unofficial-sodium::sodium)
