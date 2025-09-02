@@ -10,5 +10,5 @@ git checkout b27651341123a59f7187b42ef2bc476284afb310
 .\vcpkg integrate install
 .\vcpkg install libusb libpcap libsodium ffmpeg qt5 sdl2 vcpkg-tool-ninja
 cd ..
-cmake "-DCMAKE_TOOLCHAIN_FILE=C:/Dev/fpv4win_fork/fpv4win/vcpkg/scripts/buildsystems/vcpkg.cmake" -S ./ -B "build" -G "Visual Studio 17 2022"
+cmake "-DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake" -S ./ -B "build" -G "Visual Studio 17 2022"
 cmake --build build --config Release --target fpv4win
