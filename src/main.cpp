@@ -7,6 +7,7 @@
 #include "player/FrameSocketSender.h"
 
 #pragma comment(lib, "ws2_32.lib")
+#define HEADLESS_MODE TRUE
 
 #ifdef DEBUG_MODE
 #include <DbgHelp.h>
@@ -34,7 +35,6 @@ LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException) {
 
 #endif
 
-
 QString url = "sdp/sdp.sdp";
 std::thread analysisThread;
 bool playStop = false;
@@ -45,27 +45,23 @@ std::queue<shared_ptr<AVFrame>> videoFrameQueue;
 volatile bool isMuted = true;
 
 void play() {
-    // 启动分析线程
     analysisThread = std::thread([]() {
         auto decoder_ = make_shared<FFmpegDecoder>();
         // 打开并分析输入
         std::string asd = url.toStdString();
         bool ok = decoder_->OpenInput(asd);
         if (!ok) {
-            //emit onError("视频加载出错", -2);
             std::cout << "error\n";
             return;
         }
-        {   // critical section
+        {
             std::lock_guard<std::mutex> lck(mtx);
             decoder = decoder_;
         }
 
-        // Only create decode thread AFTER decoder is successfully initialized
         std::thread decodeThread([]() {
             while (!playStop) {
                 try {
-                    // Now we know decoder is valid when we reach this point
                     auto frame = decoder->GetNextFrame();
                     if (!frame) {
                         continue;
@@ -73,11 +69,8 @@ void play() {
                     if (!frameSender->isConnected()) {
                         frameSender->initialize();
                     }
-                    //SaveFrameAsBMP(frame, "last_frame.bmp");
-                    //frameWriter.sendFrame(frame);
                     frameSender->sendFrame(frame);
                     {
-                        // 解码获取到视频帧,放入帧缓冲队列
                         lock_guard<mutex> lck(mtx);
                         if (videoFrameQueue.size() > 10) {
                             videoFrameQueue.pop();
@@ -86,23 +79,13 @@ void play() {
                     }
                 }
                 catch (const exception& e) {
-                    //emit onError(e.what(), -2);
-                    // 出错，停止
                     std::cout << e.what();
                     break;
                 }
             }
             playStop = true;
-            // 解码已经停止，触发信号
-            //emit onPlayStopped();
             });
         decodeThread.detach();
-
-        //if (decoder->HasVideo()) {
-            //onVideoInfoReady(decoder->GetWidth(), decoder->GetHeight(), decoder->GetVideoFrameFormat());
-        //}
-        // 码率计算回调
-        //decoder->onBitrate = [this](uint64_t bitrate) { emit onBitrate(static_cast<long>(bitrate)); };
         });
     analysisThread.detach();
 }
@@ -126,7 +109,7 @@ void test() {
     QObject::connect(&QmlNativeAPI::Instance(), &QmlNativeAPI::onRtpStream, []() {
         play();
     });
-    while (true) {
+    while (!playStop) {
         sleep(0.1);
     }
 }
@@ -135,21 +118,21 @@ int main(int argc, char *argv[]) {
 #ifdef DEBUG_MODE
     SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)ApplicationCrashHandler);
 #endif
-
-    //QGuiApplication app(argc, argv);
-    //
-    //QQmlApplicationEngine engine;
-    //
-    //qmlRegisterType<QQuickRealTimePlayer>("realTimePlayer", 1, 0, "QQuickRealTimePlayer");
-    //
-    //auto &qmlNativeApi = QmlNativeAPI::Instance();
-    //engine.rootContext()->setContextProperty("NativeApi", &qmlNativeApi);
-    //
-    //engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
-    //
-    //return QGuiApplication::exec();
-
-
+#if HEADLESS_MODE
     test();
     return 0;
+#else
+    QGuiApplication app(argc, argv);
+    
+    QQmlApplicationEngine engine;
+    
+    qmlRegisterType<QQuickRealTimePlayer>("realTimePlayer", 1, 0, "QQuickRealTimePlayer");
+    
+    auto &qmlNativeApi = QmlNativeAPI::Instance();
+    engine.rootContext()->setContextProperty("NativeApi", &qmlNativeApi);
+    
+    engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
+    
+    return QGuiApplication::exec();
+#endif
 }
