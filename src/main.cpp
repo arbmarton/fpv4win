@@ -35,20 +35,18 @@ LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException) {
 #endif
 
 
+QString url = "sdp/sdp.sdp";
+std::thread analysisThread;
+bool playStop = false;
+shared_ptr<FFmpegDecoder> decoder;
+std::mutex mtx;
+FrameSocketSender* frameSender = new FrameSocketSender();
+std::queue<shared_ptr<AVFrame>> videoFrameQueue;
+volatile bool isMuted = true;
 
 void play() {
-    QString url = "sdp/sdp.sdp";
-    std::thread analysisThread;
-    bool playStop = false;
-    shared_ptr<FFmpegDecoder> decoder;
-    std::thread decodeThread;
-    std::mutex mtx;
-    FrameSocketSender* frameSender = new FrameSocketSender();
-    std::queue<shared_ptr<AVFrame>> videoFrameQueue;
-    volatile bool isMuted = true;
-
     // 启动分析线程
-    analysisThread = std::thread([&, url, frameSender]() {
+    analysisThread = std::thread([]() {
         auto decoder_ = make_shared<FFmpegDecoder>();
         // 打开并分析输入
         std::string asd = url.toStdString();
@@ -62,11 +60,12 @@ void play() {
             std::lock_guard<std::mutex> lck(mtx);
             decoder = decoder_;
         }
-        // 启动解码线程
-        decodeThread = std::thread([&playStop, &decoder, frameSender, &videoFrameQueue, &mtx]() {
+
+        // Only create decode thread AFTER decoder is successfully initialized
+        std::thread decodeThread([]() {
             while (!playStop) {
                 try {
-                    // 循环解码
+                    // Now we know decoder is valid when we reach this point
                     auto frame = decoder->GetNextFrame();
                     if (!frame) {
                         continue;
@@ -102,7 +101,6 @@ void play() {
         //if (decoder->HasVideo()) {
             //onVideoInfoReady(decoder->GetWidth(), decoder->GetHeight(), decoder->GetVideoFrameFormat());
         //}
-
         // 码率计算回调
         //decoder->onBitrate = [this](uint64_t bitrate) { emit onBitrate(static_cast<long>(bitrate)); };
         });
