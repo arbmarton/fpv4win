@@ -47,8 +47,8 @@ volatile bool isMuted = true;
 
 std::chrono::steady_clock::time_point last_frame_send = std::chrono::steady_clock::now();
 
-void play() {
-    analysisThread = std::thread([]() {
+void play(const int image_send_frequency_ms) {
+    analysisThread = std::thread([image_send_frequency_ms]() {
         auto decoder_ = make_shared<FFmpegDecoder>();
 
         std::string asd = url.toStdString();
@@ -62,7 +62,7 @@ void play() {
             decoder = decoder_;
         }
 
-        std::thread decodeThread([]() {
+        std::thread decodeThread([image_send_frequency_ms]() {
             while (!playStop) {
                 try {
                     auto frame = decoder->GetNextFrame();
@@ -74,7 +74,7 @@ void play() {
                     }
 
                     std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_frame_send).count() > 1000) {
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_frame_send).count() > image_send_frequency_ms) {
                        frameSender->sendFrame(frame);
                        last_frame_send = std::chrono::steady_clock::now();
                     }
@@ -91,7 +91,7 @@ void play() {
     analysisThread.detach();
 }
 
-void test() {
+void initialize_acquisition(const int image_send_frequency_ms) {
     // Copied from QmlNativeAPI::Start
     const QString vidPid = "0bda:8812";
     const int channelWidth = 0;
@@ -107,8 +107,8 @@ void test() {
     QmlNativeAPI::Instance().playerCodec = codec;
     WFBReceiver::Instance().Start(vidPid.toStdString(), channel, channelWidth, keyPath.toStdString());
 
-    QObject::connect(&QmlNativeAPI::Instance(), &QmlNativeAPI::onRtpStream, []() {
-        play();
+    QObject::connect(&QmlNativeAPI::Instance(), &QmlNativeAPI::onRtpStream, [image_send_frequency_ms]() {
+        play(image_send_frequency_ms);
     });
     while (!playStop) {
         sleep(0.1);
@@ -120,7 +120,12 @@ int main(int argc, char *argv[]) {
     SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)ApplicationCrashHandler);
 #endif
 #if HEADLESS_MODE
-    test();
+    int image_send_frequency_ms = -1;
+    if (argc > 1) {
+        image_send_frequency_ms = std::stoi(argv[1]);
+    }
+    std::cout << "Image Send Frequency(ms): " << image_send_frequency_ms << std::endl;
+    initialize_acquisition(image_send_frequency_ms);
     return 0;
 #else
     QGuiApplication app(argc, argv);
