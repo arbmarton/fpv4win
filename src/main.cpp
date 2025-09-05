@@ -6,6 +6,8 @@
 
 #include "player/FrameSocketSender.h"
 
+#include <chrono>
+
 #pragma comment(lib, "ws2_32.lib")
 #define HEADLESS_MODE TRUE
 
@@ -41,13 +43,14 @@ bool playStop = false;
 shared_ptr<FFmpegDecoder> decoder;
 std::mutex mtx;
 FrameSocketSender* frameSender = new FrameSocketSender();
-std::queue<shared_ptr<AVFrame>> videoFrameQueue;
 volatile bool isMuted = true;
+
+std::chrono::steady_clock::time_point last_frame_send = std::chrono::steady_clock::now();
 
 void play() {
     analysisThread = std::thread([]() {
         auto decoder_ = make_shared<FFmpegDecoder>();
-        // 打开并分析输入
+
         std::string asd = url.toStdString();
         bool ok = decoder_->OpenInput(asd);
         if (!ok) {
@@ -69,13 +72,11 @@ void play() {
                     if (!frameSender->isConnected()) {
                         frameSender->initialize();
                     }
-                    frameSender->sendFrame(frame);
-                    {
-                        lock_guard<mutex> lck(mtx);
-                        if (videoFrameQueue.size() > 10) {
-                            videoFrameQueue.pop();
-                        }
-                        videoFrameQueue.push(frame);
+
+                    std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_frame_send).count() > 1000) {
+                       frameSender->sendFrame(frame);
+                       last_frame_send = std::chrono::steady_clock::now();
                     }
                 }
                 catch (const exception& e) {
