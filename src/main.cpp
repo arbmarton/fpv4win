@@ -39,24 +39,22 @@ LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException) {
 #endif
 
 bool playStop = false;
-shared_ptr<FFmpegDecoder> decoder;
-
-std::chrono::steady_clock::time_point last_frame_send = std::chrono::steady_clock::now();
 
 void start_decode_thread(const int image_send_frequency_ms) {
     std::thread decodeThread([image_send_frequency_ms]() {
-        std::unique_ptr<FrameSocketSender> frameSender = std::make_unique<FrameSocketSender>();
-        auto decoder = make_shared<FFmpegDecoder>();
+        const std::unique_ptr<FrameSocketSender> frameSender = std::make_unique<FrameSocketSender>();
+        const std::unique_ptr<FFmpegDecoder> decoder = std::make_unique<FFmpegDecoder>();
     
         std::string url = "sdp/sdp.sdp";
-        bool ok = decoder->OpenInput(url);
+        const bool ok = decoder->OpenInput(url);
         if (!ok) {
-            std::cout << "error\n";
+            std::cout << "error opening input\n";
             return;
         }
+        std::chrono::steady_clock::time_point last_frame_send_time = std::chrono::steady_clock::now();
         while (!playStop) {
             try {
-                auto frame = decoder->GetNextFrame();
+                const auto frame = decoder->GetNextFrame();
                 if (!frame) {
                     continue;
                 }
@@ -65,9 +63,9 @@ void start_decode_thread(const int image_send_frequency_ms) {
                 }
     
                 std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_frame_send).count() > image_send_frequency_ms) {
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_frame_send_time).count() > image_send_frequency_ms) {
                    frameSender->sendFrame(frame);
-                   last_frame_send = std::chrono::steady_clock::now();
+                   last_frame_send_time = std::chrono::steady_clock::now();
                 }
             }
             catch (const exception& e) {
