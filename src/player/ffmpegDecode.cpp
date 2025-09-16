@@ -1,4 +1,4 @@
-﻿#include "ffmpegDecode.h"
+#include "ffmpegDecode.h"
 #include <QDateTime>
 #include <QThread>
 #include <iostream>
@@ -69,8 +69,18 @@ bool FFmpegDecoder::OpenInput(string &inputFile) {
 
     // 创建音频解码缓存
     if (hasAudioStream) {
-        audioFifoBuffer = shared_ptr<AVFifo>(
-            av_fifo_alloc2(0, GetAudioFrameSamples() * GetAudioChannelCount() * 10, AV_FIFO_FLAG_AUTO_GROW));
+        audioFifoBuffer = std::shared_ptr<AVFifo>(
+            av_fifo_alloc2(
+                0,
+                GetAudioFrameSamples() * GetAudioChannelCount() * 10,
+                AV_FIFO_FLAG_AUTO_GROW
+            ),
+            [](AVFifo *f) {
+                if (f) {
+                    av_fifo_freep2(&f);
+                }
+            }
+        );
     }
     return true;
 }

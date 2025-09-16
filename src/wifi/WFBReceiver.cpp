@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by Talus on 2024/6/10.
 //
 
@@ -15,6 +15,19 @@
 #include <sstream>
 
 #include "Rtp.h"
+
+#ifdef _WIN32
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+#else
+  #include <sys/socket.h>
+  #include <arpa/inet.h>
+  #include <unistd.h>
+  #define INVALID_SOCKET (-1)
+  #define SOCKET_ERROR   (-1)
+  typedef int SOCKET;
+#endif
+
 
 std::vector<std::string> WFBReceiver::GetDongleList() {
     std::vector<std::string> list;
@@ -235,17 +248,31 @@ bool WFBReceiver::Stop() {
 }
 
 WFBReceiver::WFBReceiver() {
+#ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         std::cerr << "WSAStartup failed." << std::endl;
         return;
     }
+#else
+    sendFd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sendFd == INVALID_SOCKET) {
+        perror("socket creation failed");
+        return;
+    }
+#endif
     sendFd = socket(AF_INET, SOCK_DGRAM, 0);
 }
 
 WFBReceiver::~WFBReceiver() {
+#ifdef _WIN32
     closesocket(sendFd);
+#else
+    close(sendFd);
+#endif
     sendFd = INVALID_SOCKET;
+#ifdef _WIN32
     WSACleanup();
+#endif
     Stop();
 }
