@@ -64,7 +64,138 @@ std::vector<std::string> WFBReceiver::GetDongleList() {
     libusb_exit(findctx);
     return list;
 }
-bool WFBReceiver::Start(const std::string &vidPid, uint8_t channel, int channelWidth, const std::string &kPath) {
+
+libusb_device_handle* WFBReceiver::openSpecificDevice(libusb_context* ctx,
+    uint16_t vid, uint16_t pid,
+    const UsbDeviceId& targetId) {
+    libusb_device** list;
+    ssize_t cnt = libusb_get_device_list(ctx, &list);
+    if (cnt < 0) return nullptr;
+
+    libusb_device_handle* handle = nullptr;
+
+    const auto portPathToString = [](const std::vector<uint8_t>& ports) {
+        std::ostringstream oss;
+        for (size_t i = 0; i < ports.size(); ++i) {
+            if (i > 0) oss << "-";
+            oss << (int)ports[i];
+        }
+        return oss.str();
+    };
+
+    for (ssize_t i = 0; i < cnt; ++i) {
+        libusb_device* dev = list[i];
+        libusb_device_descriptor desc;
+        if (libusb_get_device_descriptor(dev, &desc) != 0) continue;
+
+        if (desc.idVendor == vid && desc.idProduct == pid) {
+            uint8_t bus = libusb_get_bus_number(dev);
+            uint8_t addr = libusb_get_device_address(dev);
+            uint8_t ports[8];
+            int nports = libusb_get_port_numbers(dev, ports, sizeof(ports));
+
+            std::vector<uint8_t> portVec(ports, ports + (nports > 0 ? nports : 0));
+
+            // Match against target
+            if (bus == targetId.bus &&
+                addr == targetId.address &&
+                portVec == targetId.portPath) {
+
+                if (libusb_open(dev, &handle) == 0) {
+                    std::cout << "Opened device on bus " << (int)bus
+                        << " addr " << (int)addr
+                        << " port path " << portPathToString(portVec)
+                        << std::endl;
+                }
+                break;
+            }
+        }
+    }
+
+    libusb_free_device_list(list, 1);
+    return handle;
+}
+
+bool WFBReceiver::Start(const std::string& vidPid, uint8_t channel, int channelWidth, const std::string& kPath) {
+    QmlNativeAPI::Instance().wifiFrameCount_ = 0;
+    QmlNativeAPI::Instance().wfbFrameCount_ = 0;
+    QmlNativeAPI::Instance().rtpPktCount_ = 0;
+    QmlNativeAPI::Instance().UpdateCount();
+
+    keyPath = kPath;
+    if (usbThread) {
+        return false;
+    }
+    int rc;
+
+    // get vid pid
+    std::istringstream iss(vidPid);
+    unsigned int wifiDeviceVid, wifiDevicePid;
+    char c;
+    iss >> std::hex >> wifiDeviceVid >> c >> wifiDevicePid;
+
+    auto logger = std::make_shared<Logger>(
+        [](const std::string& level, const std::string& msg) { QmlNativeAPI::Instance().PutLog(level, msg); });
+
+    rc = libusb_init(&ctx);
+    if (rc < 0) {
+        return false;
+    }
+    dev_handle = libusb_open_device_with_vid_pid(ctx, wifiDeviceVid, wifiDevicePid);
+    if (dev_handle == nullptr) {
+        logger->error("Cannot find device {:04x}:{:04x}", wifiDeviceVid, wifiDevicePid);
+        libusb_exit(ctx);
+        return false;
+    }
+
+    /*Check if kenel driver attached*/
+    if (libusb_kernel_driver_active(dev_handle, 0)) {
+        rc = libusb_detach_kernel_driver(dev_handle, 0); // detach driver
+    }
+    rc = libusb_claim_interface(dev_handle, 0);
+
+    if (rc < 0) {
+        return false;
+    }
+
+    usbThread = std::make_shared<std::thread>([=]() {
+        WiFiDriver wifi_driver{ logger };
+        try {
+            rtlDevice = wifi_driver.CreateRtlDevice(dev_handle);
+            rtlDevice->Init(
+                [](const Packet& p) {
+                    WFBReceiver::Instance().handle80211Frame(p);
+                    QmlNativeAPI::Instance().UpdateCount();
+                },
+                SelectedChannel{
+                    .Channel = channel,
+                    .ChannelOffset = 0,
+                    .ChannelWidth = static_cast<ChannelWidth_t>(channelWidth),
+                });
+        }
+        catch (const std::runtime_error& e) {
+            logger->error(e.what());
+        }
+        catch (...) {
+        }
+        auto rc = libusb_release_interface(dev_handle, 0);
+        if (rc < 0) {
+            // error
+        }
+        logger->info("==========stoped==========");
+        libusb_close(dev_handle);
+        libusb_exit(ctx);
+        dev_handle = nullptr;
+        ctx = nullptr;
+        Stop();
+        usbThread.reset();
+        });
+    usbThread->detach();
+
+    return true;
+}
+
+bool WFBReceiver::StartWithDeviceId(const std::string &vidPid, const UsbDeviceId usbDeviceId, uint8_t channel, int channelWidth, const std::string &kPath) {
 
     QmlNativeAPI::Instance().wifiFrameCount_ = 0;
     QmlNativeAPI::Instance().wfbFrameCount_ = 0;
@@ -90,7 +221,9 @@ bool WFBReceiver::Start(const std::string &vidPid, uint8_t channel, int channelW
     if (rc < 0) {
         return false;
     }
-    dev_handle = libusb_open_device_with_vid_pid(ctx, wifiDeviceVid, wifiDevicePid);
+    //dev_handle = libusb_open_device_with_vid_pid(ctx, wifiDeviceVid, wifiDevicePid);
+    libusb_device_handle* dev_handle =
+        openSpecificDevice(ctx, wifiDeviceVid, wifiDevicePid, usbDeviceId);
     if (dev_handle == nullptr) {
         logger->error("Cannot find device {:04x}:{:04x}", wifiDeviceVid, wifiDevicePid);
         libusb_exit(ctx);
@@ -132,7 +265,7 @@ bool WFBReceiver::Start(const std::string &vidPid, uint8_t channel, int channelW
         logger->info("==========stoped==========");
         libusb_close(dev_handle);
         libusb_exit(ctx);
-        dev_handle = nullptr;
+        //dev_handle = nullptr;
         ctx = nullptr;
         Stop();
         usbThread.reset();
