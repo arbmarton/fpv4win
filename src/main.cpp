@@ -10,7 +10,6 @@
 #include <memory>
 
 #pragma comment(lib, "ws2_32.lib")
-#define HEADLESS_MODE TRUE
 
 #ifdef DEBUG_MODE
 #include <DbgHelp.h>
@@ -78,11 +77,10 @@ void start_decode_thread(const int image_send_frequency_ms) {
     decodeThread.detach();
 }
 
-void initialize_acquisition(const int image_send_frequency_ms) {
+void initialize_acquisition(const int channel, const int image_send_frequency_ms) {
     // Copied from QmlNativeAPI::Start
     const QString vidPid = "0bda:8812";
     const int channelWidth = 0;
-    const int channel = 161;
     const QString keyPath = "gs.key";
     const QString codec = "AUTO";
     mINI::Instance()[CONFIG_CHANNEL] = channel;
@@ -106,26 +104,49 @@ int main(int argc, char *argv[]) {
 #ifdef DEBUG_MODE
     SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)ApplicationCrashHandler);
 #endif
-#if HEADLESS_MODE
+    bool headless = false;
     int image_send_frequency_ms = -1;
-    if (argc > 1) {
-        image_send_frequency_ms = std::stoi(argv[1]);
+    int channel = -1;
+
+    std::cout << "argc: " << argc << std::endl;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        std::cout << "arg: " << arg << std::endl;
+
+        if (arg == "--headless") {
+            const std::string val = argv[++i];
+            headless = val == "true";
+            std::cout << "fsdfdsfdsf" << "\n";
+            std::cout << "Headless: " << headless << std::endl;
+        }
+        else if (arg == "--image_send_frequency_ms") {
+            image_send_frequency_ms = std::stoi(argv[++i]);
+        }
+        else if (arg == "--channel") {
+            channel = std::stoi(argv[++i]);
+        }
     }
-    std::cout << "Image Send Frequency(ms): " << image_send_frequency_ms << std::endl;
-    initialize_acquisition(image_send_frequency_ms);
-    return 0;
-#else
-    QGuiApplication app(argc, argv);
-    
-    QQmlApplicationEngine engine;
-    
-    qmlRegisterType<QQuickRealTimePlayer>("realTimePlayer", 1, 0, "QQuickRealTimePlayer");
-    
-    auto &qmlNativeApi = QmlNativeAPI::Instance();
-    engine.rootContext()->setContextProperty("NativeApi", &qmlNativeApi);
-    
-    engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
-    
-    return QGuiApplication::exec();
-#endif
+
+    if (headless == true) {
+        std::cout << "Headless Mode Enabled" << std::endl;
+        std::cout << "Channel: " << channel << std::endl;
+        std::cout << "Image Send Frequency(ms): " << image_send_frequency_ms << std::endl;
+        initialize_acquisition(channel, image_send_frequency_ms);
+        return 0;
+    }
+    else {
+        QGuiApplication app(argc, argv);
+
+        QQmlApplicationEngine engine;
+
+        qmlRegisterType<QQuickRealTimePlayer>("realTimePlayer", 1, 0, "QQuickRealTimePlayer");
+
+        auto& qmlNativeApi = QmlNativeAPI::Instance();
+        engine.rootContext()->setContextProperty("NativeApi", &qmlNativeApi);
+
+        engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
+
+        return QGuiApplication::exec();
+    }
 }
