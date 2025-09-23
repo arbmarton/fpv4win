@@ -145,7 +145,7 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
                         continue;
                     }
                     if (!frameSender->isConnected()) {
-                        frameSender->initialize();
+                        frameSender->initialize(8888);
                     }
                     //SaveFrameAsBMP(frame, "last_frame.bmp");
                     //frameWriter.sendFrame(frame);

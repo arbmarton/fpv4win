@@ -96,16 +96,22 @@ libusb_device_handle* WFBReceiver::openSpecificDevice(libusb_context* ctx,
 
             std::vector<uint8_t> portVec(ports, ports + (nports > 0 ? nports : 0));
 
+            std::cout << "bus: " << int(bus) << ", addr: " << int(addr) << ", portpath:" << portPathToString(portVec) << "\n";
+
             // Match against target
             if (bus == targetId.bus &&
                 addr == targetId.address &&
                 portVec == targetId.portPath) {
 
-                if (libusb_open(dev, &handle) == 0) {
+                const auto openValue = libusb_open(dev, &handle);
+                if (openValue == 0) {
                     std::cout << "Opened device on bus " << (int)bus
                         << " addr " << (int)addr
                         << " port path " << portPathToString(portVec)
                         << std::endl;
+                }
+                else {
+                    std::cout << "libusb_open failed with " << libusb_strerror(openValue) << "\n";
                 }
                 break;
             }

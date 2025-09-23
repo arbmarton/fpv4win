@@ -8,6 +8,13 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <chrono>
+#include <iomanip>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -39,13 +46,73 @@ LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException) {
 
 bool playStop = false;
 
-void start_decode_thread(const int image_send_frequency_ms) {
-    std::thread decodeThread([image_send_frequency_ms]() {
+std::string getCurrentTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+    return ss.str();
+}
+
+void replaceAll(std::string& str, const std::string& from, const std::string& to) {
+    size_t pos = 0;
+    while ((pos = str.find(from, pos)) != std::string::npos) {
+        str.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
+std::string createSdpFile(const std::string& inputFilePath, const int portNumber) {
+    std::string replacementNumber = std::to_string(portNumber);
+
+    // Read the file
+    std::ifstream inputFile(inputFilePath);
+    if (!inputFile.is_open()) {
+        std::cerr << "Error: Could not open input file: " << inputFilePath << std::endl;
+        return "";
+    }
+
+    // Read entire file content
+    std::stringstream buffer;
+    buffer << inputFile.rdbuf();
+    std::string fileContent = buffer.str();
+    inputFile.close();
+
+    // Replace the string
+    replaceAll(fileContent, "52356", replacementNumber);
+
+    // Generate output filename with timestamp
+    std::string timestamp = getCurrentTimestamp();
+    std::string outputFileName = "output_" + timestamp + ".sdp";
+
+    // Write to new file
+    std::ofstream outputFile(outputFileName);
+    if (!outputFile.is_open()) {
+        std::cerr << "Error: Could not create output file: " << outputFileName << std::endl;
+        return "";
+    }
+
+    outputFile << fileContent;
+    outputFile.close();
+
+    std::cout << "File processed successfully!" << std::endl;
+    std::cout << "Output saved to: " << outputFileName << std::endl;
+    std::cout << "Replaced all occurrences of '52356' with '" << replacementNumber << "'" << std::endl;
+
+    return outputFileName;
+}
+
+void start_decode_thread(const int udp_port, const int python_port, const int image_send_frequency_ms) {
+    std::thread decodeThread([udp_port, python_port, image_send_frequency_ms]() {
         const std::unique_ptr<FrameSocketSender> frameSender = std::make_unique<FrameSocketSender>();
         const std::unique_ptr<FFmpegDecoder> decoder = std::make_unique<FFmpegDecoder>();
+
+        std::cout << "inside start_decode_thread: " << python_port << "\n";
     
         std::string url = "sdp/sdp.sdp";
-        const bool ok = decoder->OpenInput(url);
+        std::string tempSdpFile = createSdpFile(url, udp_port);
+        const bool ok = decoder->OpenInput(tempSdpFile);
         if (!ok) {
             std::cout << "error opening input\n";
             return;
@@ -58,7 +125,8 @@ void start_decode_thread(const int image_send_frequency_ms) {
                     continue;
                 }
                 if (!frameSender->isConnected()) {
-                    frameSender->initialize();
+                    std::cout << "frame sender port: " << python_port << "\n";
+                    frameSender->initialize(python_port);
                 }
     
                 std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
@@ -77,7 +145,7 @@ void start_decode_thread(const int image_send_frequency_ms) {
     decodeThread.detach();
 }
 
-void initialize_acquisition(const UsbDeviceId usbDeviceId, const int channel, const int image_send_frequency_ms) {
+void initialize_acquisition(const UsbDeviceId usbDeviceId, const int udp_port, const int python_port, const int channel, const int image_send_frequency_ms) {
     // Copied from QmlNativeAPI::Start
     const QString vidPid = "0bda:8812";
     const int channelWidth = 0;
@@ -88,12 +156,15 @@ void initialize_acquisition(const UsbDeviceId usbDeviceId, const int channel, co
     mINI::Instance()[CONFIG_CHANNEL_KEY] = keyPath.toStdString();
     mINI::Instance()[CONFIG_CHANNEL_CODEC] = codec.toStdString();
     mINI::Instance().dumpFile(CONFIG_FILE);
-    QmlNativeAPI::Instance().playerPort = QmlNativeAPI::Instance().GetFreePort();
+    QmlNativeAPI::Instance().playerPort = udp_port;
     QmlNativeAPI::Instance().playerCodec = codec;
     WFBReceiver::Instance().StartWithDeviceId(vidPid.toStdString(), usbDeviceId, channel, channelWidth, keyPath.toStdString());
 
-    QObject::connect(&QmlNativeAPI::Instance(), &QmlNativeAPI::onRtpStream, [image_send_frequency_ms]() {
-        start_decode_thread(image_send_frequency_ms);
+    std::cout << "inside init acq: " << python_port << "\n";
+
+    QObject::connect(&QmlNativeAPI::Instance(), &QmlNativeAPI::onRtpStream, [udp_port, python_port, image_send_frequency_ms]() {
+        std::cout << "inside connect: " << python_port << "\n";
+        start_decode_thread(udp_port, python_port, image_send_frequency_ms);
     });
     while (!playStop) {
         sleep(0.1);
@@ -226,6 +297,8 @@ int main(int argc, char *argv[]) {
     int image_send_frequency_ms = -1;
     int channel = -1;
     UsbDeviceId usbDeviceId;
+    int udp_port = -1;
+    int python_port = -1;
 
     std::cout << "argc: " << argc << std::endl;
 
@@ -247,7 +320,12 @@ int main(int argc, char *argv[]) {
             std::string device_id = argv[++i];
             std::cout << "Device ID: " << device_id << std::endl;
             usbDeviceId = parseUsbDescriptor(device_id);
-
+        }
+        else if (arg == "--udp_port") {
+            udp_port = std::stoi(argv[++i]);
+        }
+        else if (arg == "--python_port") {
+            python_port = std::stoi(argv[++i]);
         }
     }
 
@@ -255,8 +333,9 @@ int main(int argc, char *argv[]) {
         std::cout << "Headless Mode Enabled" << std::endl;
         std::cout << "Channel: " << channel << std::endl;
         std::cout << "Image Send Frequency(ms): " << image_send_frequency_ms << std::endl;
+        std::cout << "Python port: " << python_port << "\n";
 
-        initialize_acquisition(usbDeviceId, channel, image_send_frequency_ms);
+        initialize_acquisition(usbDeviceId, udp_port, python_port, channel, image_send_frequency_ms);
         return 0;
     }
     else {
