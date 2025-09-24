@@ -108,8 +108,6 @@ void start_decode_thread(const int udp_port, const int python_port, const int im
     std::thread decodeThread([udp_port, python_port, image_send_frequency_ms]() {
         const std::unique_ptr<FrameSocketSender> frameSender = std::make_unique<FrameSocketSender>();
         const std::unique_ptr<FFmpegDecoder> decoder = std::make_unique<FFmpegDecoder>();
-
-        std::cout << "inside start_decode_thread: " << python_port << "\n";
     
         std::string baseSdpFile = "sdp/sdp.sdp";
         std::string sdpFileForPort = "sdp_" + std::to_string(udp_port) + ".sdp";
@@ -129,7 +127,6 @@ void start_decode_thread(const int udp_port, const int python_port, const int im
                     continue;
                 }
                 if (!frameSender->isConnected()) {
-                    std::cout << "frame sender port: " << python_port << "\n";
                     frameSender->initialize(python_port);
                 }
     
@@ -164,10 +161,7 @@ void initialize_acquisition(const UsbDeviceId usbDeviceId, const int udp_port, c
     QmlNativeAPI::Instance().playerCodec = codec;
     WFBReceiver::Instance().StartWithDeviceId(vidPid.toStdString(), usbDeviceId, channel, channelWidth, keyPath.toStdString());
 
-    std::cout << "inside init acq: " << python_port << "\n";
-
     QObject::connect(&QmlNativeAPI::Instance(), &QmlNativeAPI::onRtpStream, [udp_port, python_port, image_send_frequency_ms]() {
-        std::cout << "inside connect: " << python_port << "\n";
         start_decode_thread(udp_port, python_port, image_send_frequency_ms);
     });
     while (!playStop) {
@@ -247,6 +241,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Channel: " << channel << std::endl;
         std::cout << "Image Send Frequency(ms): " << image_send_frequency_ms << std::endl;
         std::cout << "Python port: " << python_port << "\n";
+        std::cout << "UDP port: " << udp_port << "\n";
 
         initialize_acquisition(usbDeviceId, udp_port, python_port, channel, image_send_frequency_ms);
         return 0;
