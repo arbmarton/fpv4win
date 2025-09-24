@@ -15,6 +15,7 @@
 #include <sstream>
 #include <chrono>
 #include <iomanip>
+#include <filesystem>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -63,7 +64,7 @@ void replaceAll(std::string& str, const std::string& from, const std::string& to
     }
 }
 
-std::string createSdpFile(const std::string& inputFilePath, const int portNumber) {
+std::string createSdpFileForPortNumber(const std::string& inputFilePath, const int portNumber) {
     std::string replacementNumber = std::to_string(portNumber);
 
     // Read the file
@@ -84,7 +85,7 @@ std::string createSdpFile(const std::string& inputFilePath, const int portNumber
 
     // Generate output filename with timestamp
     std::string timestamp = getCurrentTimestamp();
-    std::string outputFileName = "output_" + timestamp + ".sdp";
+    std::string outputFileName = "sdp_" + std::to_string(portNumber) + ".sdp";
 
     // Write to new file
     std::ofstream outputFile(outputFileName);
@@ -110,9 +111,12 @@ void start_decode_thread(const int udp_port, const int python_port, const int im
 
         std::cout << "inside start_decode_thread: " << python_port << "\n";
     
-        std::string url = "sdp/sdp.sdp";
-        std::string tempSdpFile = createSdpFile(url, udp_port);
-        const bool ok = decoder->OpenInput(tempSdpFile);
+        std::string baseSdpFile = "sdp/sdp.sdp";
+        std::string sdpFileForPort = "sdp_" + std::to_string(udp_port) + ".sdp";
+        if (!std::filesystem::exists(sdpFileForPort)) {
+            createSdpFileForPortNumber(baseSdpFile, udp_port);
+        }
+        const bool ok = decoder->OpenInput(sdpFileForPort);
         if (!ok) {
             std::cout << "error opening input\n";
             return;
@@ -169,97 +173,6 @@ void initialize_acquisition(const UsbDeviceId usbDeviceId, const int udp_port, c
     while (!playStop) {
         sleep(0.1);
     }
-}
-
-void test_libusb_enumeration() {
-#define VID 0x0bda
-#define PID 0x8812
-    libusb_context* ctx = NULL;
-    libusb_device** list = NULL;
-    ssize_t cnt;
-    int rc;
-
-    rc = libusb_init(&ctx);
-    if (rc) {
-        fprintf(stderr, "libusb_init failed: %d\n", rc);
-        return;
-    }
-
-    cnt = libusb_get_device_list(ctx, &list);
-    if (cnt < 0) {
-        fprintf(stderr, "get_device_list failed: %zd\n", cnt);
-        libusb_exit(ctx);
-        return;
-    }
-
-    printf("Found %zd libusb devices\n", cnt);
-
-    for (ssize_t i = 0; i < cnt; ++i) {
-        libusb_device* dev = list[i];
-        struct libusb_device_descriptor desc;
-        rc = libusb_get_device_descriptor(dev, &desc);
-        if (rc != 0) continue;
-
-        if (desc.idVendor == VID && desc.idProduct == PID) {
-            libusb_device_handle* handle = NULL;
-            rc = libusb_open(dev, &handle);
-            if (rc != 0 || handle == NULL) {
-                fprintf(stderr, "Could not open device (bus %u addr %u): %s\n",
-                    libusb_get_bus_number(dev), libusb_get_device_address(dev),
-                    libusb_error_name(rc));
-                continue;
-            }
-
-            // Optional: show bus/address/ports
-            uint8_t ports[8];
-            int port_count = libusb_get_port_numbers(dev, ports, sizeof(ports));
-            printf("Opened device: bus %u addr %u",
-                libusb_get_bus_number(dev), libusb_get_device_address(dev));
-            if (port_count > 0) {
-                printf(", port path:");
-                for (int p = 0; p < port_count; ++p) printf(" %u", ports[p]);
-            }
-            printf("\n");
-
-            // Try to read serial string (if device provides it)
-            if (desc.iSerialNumber) {
-                unsigned char serial[256];
-                rc = libusb_get_string_descriptor_ascii(handle, desc.iSerialNumber, serial, sizeof(serial));
-                if (rc > 0) {
-                    printf("  serial: %s\n", (char*)serial);
-                }
-                else {
-                    printf("  serial: <unavailable> (err %d)\n", rc);
-                }
-            }
-
-            // If kernel driver is attached on Linux you may need to detach:
-#if defined(__linux__)
-            if (libusb_kernel_driver_active(handle, 0) == 1) {
-                rc = libusb_detach_kernel_driver(handle, 0);
-                if (rc == 0) printf("  detached kernel driver from iface 0\n");
-                else printf("  failed to detach kernel driver: %s\n", libusb_error_name(rc));
-            }
-#endif
-
-            // Claim interface (adjust interface number to your device)
-            rc = libusb_claim_interface(handle, 0);
-            if (rc == 0) {
-                printf("  claimed interface 0\n");
-            }
-            else {
-                printf("  claim interface failed: %s\n", libusb_error_name(rc));
-                // depending on device you might continue anyway
-            }
-
-            // store handles somewhere in your real code; here we immediately release
-            libusb_release_interface(handle, 0);
-            libusb_close(handle);
-        }
-    }
-
-    libusb_free_device_list(list, 1);
-    libusb_exit(ctx);
 }
 
 UsbDeviceId parseUsbDescriptor(const std::string& str) {
