@@ -137,8 +137,8 @@ void start_decode_thread(const int udp_port, const int python_port, const int im
                 }
             }
             catch (const exception& e) {
-                std::cout << e.what();
-                break;
+                std::cout << e.what() << '\n';
+                //break;
             }
         }
         playStop = true;
