@@ -9,7 +9,11 @@
 bool FFmpegDecoder::OpenInput(string &inputFile) {
     CloseInput();
 
-    if (!isHwDecoderEnable) {
+    isHwDecoderEnable = false;
+    hwPixFmt = AV_PIX_FMT_NONE;
+    outputPixFmt = AV_PIX_FMT_NONE;
+    droppedPackets = 0;
+    if (hwDecoderAllowed) {
 #if defined(_WIN32)
         hwDecoderType = av_hwdevice_find_type_by_name("d3d11va");
 #elif defined(__APPLE__)
@@ -167,10 +171,10 @@ shared_ptr<AVFrame> FFmpegDecoder::GetNextFrame() {
             bool isDecodeComplite = DecodeVideo(packet.get(), pVideoYuv);
             if (isDecodeComplite) {
                 res = pVideoYuv;
-            }
-            // 回调frame
-            if (_gotFrameCallback) {
-                _gotFrameCallback(pVideoYuv);
+                // 回调frame (only for real frames; the encoders can't handle an empty AVFrame)
+                if (_gotFrameCallback) {
+                    _gotFrameCallback(pVideoYuv);
+                }
             }
             break;
         } else if (packet->stream_index == audioStreamIndex) {
@@ -198,11 +202,17 @@ shared_ptr<AVFrame> FFmpegDecoder::GetNextFrame() {
 }
 
 bool FFmpegDecoder::hwDecoderInit(AVCodecContext *ctx, const enum AVHWDeviceType type) {
-    if (av_hwdevice_ctx_create(&hwDeviceCtx, type, nullptr, nullptr, 0) < 0) {
+    int ret = av_hwdevice_ctx_create(&hwDeviceCtx, type, nullptr, nullptr, 0);
+    if (ret < 0) {
+        char errStr[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errStr, AV_ERROR_MAX_STRING_SIZE);
+        std::cerr << "hw device " << av_hwdevice_get_type_name(type) << " unavailable: " << errStr
+                  << ", falling back to software decoding" << std::endl;
         return false;
     }
+    // FFmpeg's default get_format() selects the hardware pixel format whenever hw_device_ctx is set,
+    // and automatically falls back to software decoding if the hwaccel cannot be set up for the stream.
     ctx->hw_device_ctx = av_buffer_ref(hwDeviceCtx);
-
     return true;
 }
 
@@ -262,65 +272,113 @@ bool FFmpegDecoder::OpenVideo() {
     return res;
 }
 
-bool FFmpegDecoder::DecodeVideo(const AVPacket *av_pkt, shared_ptr<AVFrame> &pOutFrame) {
-    bool res = false;
+void FFmpegDecoder::DropPacket() {
+    // Note: flushing the decoder here was measured to make no difference for VideoToolbox; the
+    // GPU decoder simply cannot use anything until the next IDR frame.
+    droppedPackets++;
+}
 
-    if (pVideoCodecCtx && av_pkt && pOutFrame) {
-        int ret = avcodec_send_packet(pVideoCodecCtx, av_pkt);
-        if (ret == AVERROR_INVALIDDATA || ret == AVERROR_UNKNOWN) {
-            // Undecodable packet (packet loss, missing reference picture, joined mid-GOP).
-            // Hardware decoders such as VideoToolbox reject these (kVTVideoDecoderBadDataErr is
-            // reported as AVERROR_UNKNOWN) instead of concealing them; drop the packet and keep
-            // the stream alive instead of restarting the player.
-            return false;
+bool FFmpegDecoder::DecodeVideo(const AVPacket *av_pkt, shared_ptr<AVFrame> &pOutFrame) {
+    if (!(pVideoCodecCtx && av_pkt && pOutFrame)) {
+        return false;
+    }
+
+    if (!hwFrame) {
+        hwFrame = shared_ptr<AVFrame>(av_frame_alloc(), &freeFrame);
+    }
+
+    int ret = avcodec_send_packet(pVideoCodecCtx, av_pkt);
+    if (ret == AVERROR(EAGAIN)) {
+        // Decoder output queue is full: hand out one queued frame first, then the packet is accepted.
+        ret = avcodec_receive_frame(pVideoCodecCtx, hwFrame.get());
+        bool got = false;
+        if (ret >= 0) {
+            got = OutputFrame(hwFrame.get(), pOutFrame);
+        } else {
+            DropPacket();
         }
+        avcodec_send_packet(pVideoCodecCtx, av_pkt);
+        return got;
+    }
+    if (ret == AVERROR_INVALIDDATA || ret == AVERROR_UNKNOWN || ret == AVERROR_EXTERNAL) {
+        // Undecodable packet (packet loss, missing reference picture, joined mid-GOP).
+        // Hardware decoders such as VideoToolbox reject these instead of concealing them
+        // (a rejected picture surfaces as AVERROR_UNKNOWN, AVERROR_INVALIDDATA or, when the
+        // session accepts the data but emits no picture, AVERROR_EXTERNAL). Drop the packet
+        // and keep the stream alive; the decoder resyncs on the next IDR frame.
+        DropPacket();
+        return false;
+    }
+    if (ret < 0) {
+        char errStr[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errStr, AV_ERROR_MAX_STRING_SIZE);
+        throw runtime_error("发送视频包出错 " + string(errStr) + " (" + std::to_string(ret) + ")");
+    }
+
+    // Always receive into the scratch frame: with a hardware decoder it holds the GPU surface,
+    // with a software decoder it holds the picture itself.
+    ret = avcodec_receive_frame(pVideoCodecCtx, hwFrame.get());
+    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+        // No output available yet (decoder delay, parameter-set-only packet, dropped picture).
+        // This is normal and must not be treated as an error.
+        return false;
+    }
+    if (ret < 0) {
+        // The picture could not be decoded (corrupt/lost data reaches some decoders only at
+        // receive time, e.g. HEVC on VideoToolbox). Same policy as above: drop, don't stop.
+        DropPacket();
+        return false;
+    }
+
+    return OutputFrame(hwFrame.get(), pOutFrame);
+}
+
+bool FFmpegDecoder::OutputFrame(AVFrame *decoded, shared_ptr<AVFrame> &pOutFrame) {
+    int ret;
+    if (decoded->hw_frames_ctx) {
+        // Copy data from the hw surface to the out frame (NV12 for VideoToolbox / D3D11VA 8-bit).
+        ret = av_hwframe_transfer_data(pOutFrame.get(), decoded, 0);
         if (ret < 0) {
             char errStr[AV_ERROR_MAX_STRING_SIZE];
             av_strerror(ret, errStr, AV_ERROR_MAX_STRING_SIZE);
-            throw runtime_error("发送视频包出错 " + string(errStr) + " (" + std::to_string(ret) + ")");
+            throw runtime_error("Decode video frame error. " + string(errStr));
         }
-
+        // av_hwframe_transfer_data() does not carry pts/key_frame/color metadata across.
+        av_frame_copy_props(pOutFrame.get(), decoded);
+    } else {
         if (isHwDecoderEnable) {
-            // Initialize the hardware frame.
-            if (!hwFrame) {
-                hwFrame = shared_ptr<AVFrame>(av_frame_alloc(), &freeFrame);
-            }
-
-            ret = avcodec_receive_frame(pVideoCodecCtx, hwFrame.get());
-        } else {
-            ret = avcodec_receive_frame(pVideoCodecCtx, pOutFrame.get());
+            // FFmpeg silently fell back to software decoding (stream not supported by the GPU).
+            std::cerr << "hardware decoding unavailable for this stream, using software decoder" << std::endl;
+            isHwDecoderEnable = false;
         }
-
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            // No output available right now or end of stream
-            res = false;
-        } else if (ret < 0) {
-            char errStr[AV_ERROR_MAX_STRING_SIZE];
-            av_strerror(ret, errStr, AV_ERROR_MAX_STRING_SIZE);
-            throw runtime_error("解码视频出错 " + string(errStr));
-        } else {
-            // Successfully decoded a frame
-            res = true;
-        }
-
-        if (isHwDecoderEnable) {
-            if (dropCurrentVideoFrame) {
-                pOutFrame.reset();
-                return false;
-            }
-
-            // Copy data from the hw surface to the out frame.
-            ret = av_hwframe_transfer_data(pOutFrame.get(), hwFrame.get(), 0);
-
-            if (ret < 0) {
-                char errStr[AV_ERROR_MAX_STRING_SIZE];
-                av_strerror(ret, errStr, AV_ERROR_MAX_STRING_SIZE);
-                throw runtime_error("Decode video frame error. " + string(errStr));
-            }
-        }
+        av_frame_move_ref(pOutFrame.get(), decoded);
     }
 
-    return res;
+    // The renderer understands yuv420p / yuvj420p / nv12. Anything else (e.g. p010 from a 10-bit
+    // HEVC stream, yuv444p) is converted to yuv420p on the CPU so playback still works.
+    auto fmt = static_cast<AVPixelFormat>(pOutFrame->format);
+    if (fmt != AV_PIX_FMT_YUV420P && fmt != AV_PIX_FMT_YUVJ420P && fmt != AV_PIX_FMT_NV12) {
+        pImgConvertCtx = sws_getCachedContext(
+            pImgConvertCtx, pOutFrame->width, pOutFrame->height, fmt, pOutFrame->width, pOutFrame->height,
+            AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+        if (!pImgConvertCtx) {
+            throw runtime_error("unsupported video pixel format " + string(av_get_pix_fmt_name(fmt)));
+        }
+        shared_ptr<AVFrame> converted(av_frame_alloc(), &freeFrame);
+        converted->format = AV_PIX_FMT_YUV420P;
+        converted->width = pOutFrame->width;
+        converted->height = pOutFrame->height;
+        if (av_frame_get_buffer(converted.get(), 0) < 0) {
+            throw runtime_error("failed to allocate conversion frame");
+        }
+        sws_scale(
+            pImgConvertCtx, pOutFrame->data, pOutFrame->linesize, 0, pOutFrame->height, converted->data,
+            converted->linesize);
+        av_frame_copy_props(converted.get(), pOutFrame.get());
+        pOutFrame = converted;
+    }
+    outputPixFmt = static_cast<AVPixelFormat>(pOutFrame->format);
+    return true;
 }
 
 bool FFmpegDecoder::OpenAudio() {
@@ -360,6 +418,14 @@ void FFmpegDecoder::CloseVideo() {
         avcodec_free_context(&pVideoCodecCtx);
         pVideoCodecCtx = nullptr;
         videoStreamIndex = 0;
+    }
+    hwFrame.reset();
+    if (hwDeviceCtx) {
+        av_buffer_unref(&hwDeviceCtx);
+    }
+    if (pImgConvertCtx) {
+        sws_freeContext(pImgConvertCtx);
+        pImgConvertCtx = nullptr;
     }
 }
 

@@ -155,10 +155,19 @@ void RealTimeRenderer::initGeometry() {
 }
 void RealTimeRenderer::updateTextureInfo(int width, int height, int format) {
     mPixFmt = format;
-    if(!inited) {
-        inited = true;
-        initTexture();
+    mTexWidth = width;
+    mTexHeight = height;
+    if (inited) {
+        // QOpenGLTexture storage is immutable once allocated: recreate the textures when the
+        // stream geometry or pixel format changes (resolution switch, hw->sw fallback).
+        safeDeleteTexture(mTexY);
+        safeDeleteTexture(mTexU);
+        safeDeleteTexture(mTexV);
+        mTexY = mTexU = mTexV = nullptr;
+        mTextureAlloced = false;
     }
+    inited = true;
+    initTexture();
     if (format == AV_PIX_FMT_YUV420P || format == AV_PIX_FMT_YUVJ420P) {
         // yuv420p
         mTexY->setSize(width, height);
@@ -193,7 +202,15 @@ void RealTimeRenderer::updateTextureInfo(int width, int height, int format) {
     mTextureAlloced = true;
 }
 
+bool RealTimeRenderer::matchesTexture(const std::shared_ptr<AVFrame> &data) const {
+    return mTextureAlloced && data->width == mTexWidth && data->height == mTexHeight && data->format == mPixFmt;
+}
+
 void RealTimeRenderer::updateTextureData(const std::shared_ptr<AVFrame> &data) {
+    if (!matchesTexture(data)) {
+        // Uploading a frame into textures of a different size/format would produce garbage.
+        updateTextureInfo(data->width, data->height, data->format);
+    }
     double frameWidth = m_itemWidth;
     double frameHeight = m_itemHeight;
     if (m_itemWidth * (1.0 * data->height / data->width) < m_itemHeight) {

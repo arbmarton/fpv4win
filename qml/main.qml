@@ -19,6 +19,8 @@ ApplicationWindow {
         id: player
         width: parent.width - 200
         height:parent.height
+        // GPU decoding is on unless config.ini has "hwDecode=0" under [config]
+        hwDecode: NativeApi.GetConfig()["config.hwDecode"] !== "0"
         property var playingFile
         Component.onCompleted: {
             NativeApi.onRtpStream.connect((sdpFile)=>{

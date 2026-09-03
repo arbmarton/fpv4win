@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "RealTimeRenderer.h"
 #include "ffmpegDecode.h"
 #include <QQuickFramebufferObject>
@@ -16,6 +16,8 @@ class QQuickRealTimePlayer : public QQuickFramebufferObject {
     Q_OBJECT
     Q_PROPERTY(bool isMuted READ getMuted WRITE setMuted NOTIFY onMutedChanged)
     Q_PROPERTY(bool hasAudio READ hasAudio NOTIFY onHasAudio)
+    // Use the GPU decoder (VideoToolbox / D3D11VA / VAAPI) when available. Takes effect on the next play().
+    Q_PROPERTY(bool hwDecode READ getHwDecode WRITE setHwDecode NOTIFY onHwDecodeChanged)
 public:
     explicit QQuickRealTimePlayer(QQuickItem *parent = nullptr);
     ~QQuickRealTimePlayer() override;
@@ -29,6 +31,13 @@ public:
     int videoHeght() const { return m_videoHeight; }
     int videoFormat() const { return m_videoFormat; }
     bool getMuted() const { return isMuted; }
+    bool getHwDecode() const { return hwDecode; }
+    void setHwDecode(bool enable) {
+        if (hwDecode != enable) {
+            hwDecode = enable;
+            emit onHwDecodeChanged(enable);
+        }
+    }
     // 播放
     Q_INVOKABLE void play(const QString &playUrl);
     // 停止
@@ -61,6 +70,8 @@ signals:
     void onMutedChanged(bool muted);
     // 是否有音频
     void onHasAudio(bool has);
+    // GPU decoding preference changed
+    void onHwDecodeChanged(bool enable);
 
     friend class TItemRender;
 
@@ -73,6 +84,8 @@ protected:
     volatile bool playStop = true;
     // 静音标记位
     volatile bool isMuted = true;
+    // 是否使用硬件解码
+    volatile bool hwDecode = true;
     // 帧队列
     std::queue<shared_ptr<AVFrame>> videoFrameQueue;
     mutex mtx;

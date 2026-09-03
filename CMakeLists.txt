@@ -23,6 +23,8 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(PkgConfig REQUIRED)
 
+# Header search path for the FFmpeg libraries (FFMPEG_INCLUDE_DIRS is consumed below)
+pkg_check_modules(FFMPEG QUIET libavcodec libavformat libavutil libswscale libswresample)
 find_library(AVFORMAT_LIBRARY avformat PATHS /opt/homebrew/lib)
 find_library(AVCODEC_LIBRARY avcodec PATHS /opt/homebrew/lib)
 find_library(AVUTIL_LIBRARY avutil PATHS /opt/homebrew/lib)
@@ -74,6 +76,11 @@ target_link_libraries(${PROJECT_NAME}
         PkgConfig::SDL2
         PkgConfig::LIBUSB
         PkgConfig::SODIUM)
+
+option(FPV4WIN_BUILD_TESTS "Build decoder/renderer test programs (see tests/run_tests.sh)" OFF)
+if (FPV4WIN_BUILD_TESTS)
+    add_subdirectory(tests)
+endif ()
 
 # The app looks for config.ini / gs.key in its working directory; keep a copy of the sample key next to the binary.
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

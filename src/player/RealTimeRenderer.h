@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "libavutil/frame.h"
 #include <QOpenGLBuffer>
@@ -30,6 +30,8 @@ public:
     void resize(int width, int height);
     void updateTextureInfo(int width, int height, int format);
     void updateTextureData(const std::shared_ptr<AVFrame> &data);
+    // True when the allocated textures fit this frame's size and pixel format
+    bool matchesTexture(const std::shared_ptr<AVFrame> &data) const;
     void clear();
 
     friend class TItemRender;
@@ -54,6 +56,8 @@ private:
     QMatrix4x4 mViewMatrix;
     QMatrix4x4 mProjectionMatrix;
     GLint mPixFmt = 0;
+    int mTexWidth = 0;
+    int mTexHeight = 0;
     bool mTextureAlloced = false;
 
     int m_itemWidth = 0;

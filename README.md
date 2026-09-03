@@ -49,4 +49,26 @@ It is recommended to use with [OpenIPC](https://github.com/OpenIPC) FPV
   cd build-mac && ./fpv4win
   ```
   No driver setup is needed on macOS: the RTL8812AU adapter is accessed directly through libusb.
-  Video is decoded with VideoToolbox when available, falling back to software decoding.
+  Video is decoded with VideoToolbox (GPU) when available, falling back to software decoding.
+  The decoded frames are uploaded as NV12 textures and converted to RGB in the OpenGL shader.
+
+  VideoToolbox does not conceal errors: a frame with lost data is dropped and playback resumes at the
+  next IDR frame, where the software decoder would show a corrupted frame instead. If your link is
+  very lossy you can force software decoding by adding this to `config.ini` next to the binary:
+  ```ini
+  [config]
+  hwDecode=0
+  ```
+
+### Tests (macOS)
+`tests/` contains a decoder test and an end-to-end render test. They need the `ffmpeg` CLI
+(for generating clips and acting as an RTP sender) and must be built with the tests option:
+```sh
+cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release -DFPV4WIN_BUILD_TESTS=ON
+cmake --build build-mac -j8
+tests/run_tests.sh build-mac
+```
+The decoder test checks that every VideoToolbox frame (H.264, H.265, 8/10-bit, B-frames) is
+bit-exact with a software decode, then streams RTP over UDP through an SDP file exactly like the
+app does, joining mid-GOP, with and without simulated packet loss. The render test plays the RTP
+stream through the real Qt Quick player and checks the window content.
