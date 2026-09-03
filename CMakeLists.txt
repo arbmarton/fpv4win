@@ -75,6 +75,12 @@ target_link_libraries(${PROJECT_NAME}
         PkgConfig::LIBUSB
         PkgConfig::SODIUM)
 
+# The app looks for config.ini / gs.key in its working directory; keep a copy of the sample key next to the binary.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/gs.key"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/gs.key")
+
 if (WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(DEBUG_SUFFIX)
     if (MSVC AND CMAKE_BUILD_TYPE MATCHES "Debug")

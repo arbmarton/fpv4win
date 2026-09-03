@@ -38,5 +38,15 @@ It is recommended to use with [OpenIPC](https://github.com/OpenIPC) FPV
 - ONVIF/GB28181/SIP client
 
 ### How to build
-- Take a look at
+- Windows: take a look at
 [GithubAction](https://github.com/openipc/fpv4win/blob/main/.github/workflows/msbuild.yml)
+- macOS (Apple Silicon, Homebrew):
+  ```sh
+  brew install cmake pkg-config qt@5 ffmpeg sdl2 libsodium libusb
+  git submodule update --init
+  cmake -S . -B build-mac -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+  cmake --build build-mac -j8
+  cd build-mac && ./fpv4win
+  ```
+  No driver setup is needed on macOS: the RTL8812AU adapter is accessed directly through libusb.
+  Video is decoded with VideoToolbox when available, falling back to software decoding.

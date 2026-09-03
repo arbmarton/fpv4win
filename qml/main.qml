@@ -326,8 +326,8 @@ ApplicationWindow {
                     nameFilters: ["Key Files (*.key)"]
 
                     onAccepted: {
-                        keySelector.text = file;
-                        keySelector.text = keySelector.text.replace('file:///','')
+                        // Windows: file:///C:/x -> C:/x ; POSIX: file:///home/x -> /home/x
+                        keySelector.text = file.toString().replace('file:///', Qt.platform.os === "windows" ? '' : '/')
                     }
                 }
                 Button {

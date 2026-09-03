@@ -1,4 +1,4 @@
-﻿#include "RealTimeRenderer.h"
+#include "RealTimeRenderer.h"
 #include "libavutil/pixfmt.h"
 #include <QOpenGLPixelTransferOptions>
 
@@ -14,7 +14,7 @@ uniform mat4 u_projectMatrix;
 varying vec2 v_texCoord;
 void main(void)
 {
-    gl_Position = u_projectMatrix * u_viewMatrix * u_modelMatrix * vec4(qt_Vertex, 1.0f);
+    gl_Position = u_projectMatrix * u_viewMatrix * u_modelMatrix * vec4(qt_Vertex, 1.0);
     v_texCoord = texCoord;
 }
 

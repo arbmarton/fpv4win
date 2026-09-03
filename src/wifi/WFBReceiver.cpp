@@ -140,7 +140,7 @@ bool WFBReceiver::Start(const std::string &vidPid, uint8_t channel, int channelW
         }
         auto rc = libusb_release_interface(dev_handle, 0);
         if (rc < 0) {
-            // error
+            logger->error("libusb_release_interface failed: {}", libusb_error_name(rc));
         }
         logger->info("==========stoped==========");
         libusb_close(dev_handle);
@@ -254,14 +254,11 @@ WFBReceiver::WFBReceiver() {
         std::cerr << "WSAStartup failed." << std::endl;
         return;
     }
-#else
+#endif
     sendFd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sendFd == INVALID_SOCKET) {
         perror("socket creation failed");
-        return;
     }
-#endif
-    sendFd = socket(AF_INET, SOCK_DGRAM, 0);
 }
 
 WFBReceiver::~WFBReceiver() {

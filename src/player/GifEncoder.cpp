@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by liangzhuohua on 2022/4/22.
 //
 
@@ -124,7 +124,11 @@ void GifEncoder::close() {
     }
     if (_codecCtx) {
         // 关闭编码器
+#if LIBAVCODEC_VERSION_MAJOR < 62
+        // avcodec_close() was removed in FFmpeg 8; the shared_ptr deleter (avcodec_free_context)
+        // closes and frees the context on every version.
         avcodec_close(_codecCtx.get());
+#endif
     }
     // 关闭文件
     avio_close(_formatCtx->pb);

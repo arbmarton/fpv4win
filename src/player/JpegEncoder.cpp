@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by liangzhuohua on 2022/2/28.
 //
 
@@ -78,7 +78,8 @@ bool JpegEncoder::encodeJpeg(const string &outFilePath, const shared_ptr<AVFrame
     }
     // 设置编码参数
     shared_ptr<AVCodecContext> codecCtx = shared_ptr<AVCodecContext>(
-        avcodec_alloc_context3(pCodec), [](AVCodecContext *ctx) { avcodec_free_context(&ctx); });
+        avcodec_alloc_context3(pCodec),
+        [](AVCodecContext *ctx) { avcodec_free_context(&ctx); });
     codecCtx->codec_id = pFormatCtx->oformat->video_codec;
     codecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
     codecCtx->pix_fmt = static_cast<AVPixelFormat>(frame->format);
@@ -126,7 +127,11 @@ bool JpegEncoder::encodeJpeg(const string &outFilePath, const shared_ptr<AVFrame
     // 写文件尾
     av_write_trailer(pFormatCtx.get());
     // 关闭编码器
+#if LIBAVCODEC_VERSION_MAJOR < 62
+    // avcodec_close() was removed in FFmpeg 8; the shared_ptr deleter (avcodec_free_context)
+    // closes and frees the context on every version.
     avcodec_close(codecCtx.get());
+#endif
     // 关闭文件
     avio_close(pFormatCtx->pb);
     return true;

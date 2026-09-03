@@ -10,7 +10,13 @@ bool FFmpegDecoder::OpenInput(string &inputFile) {
     CloseInput();
 
     if (!isHwDecoderEnable) {
+#if defined(_WIN32)
         hwDecoderType = av_hwdevice_find_type_by_name("d3d11va");
+#elif defined(__APPLE__)
+        hwDecoderType = av_hwdevice_find_type_by_name("videotoolbox");
+#else
+        hwDecoderType = av_hwdevice_find_type_by_name("vaapi");
+#endif
         if (hwDecoderType != AV_HWDEVICE_TYPE_NONE) {
             isHwDecoderEnable = true;
         }
@@ -261,10 +267,17 @@ bool FFmpegDecoder::DecodeVideo(const AVPacket *av_pkt, shared_ptr<AVFrame> &pOu
 
     if (pVideoCodecCtx && av_pkt && pOutFrame) {
         int ret = avcodec_send_packet(pVideoCodecCtx, av_pkt);
+        if (ret == AVERROR_INVALIDDATA || ret == AVERROR_UNKNOWN) {
+            // Undecodable packet (packet loss, missing reference picture, joined mid-GOP).
+            // Hardware decoders such as VideoToolbox reject these (kVTVideoDecoderBadDataErr is
+            // reported as AVERROR_UNKNOWN) instead of concealing them; drop the packet and keep
+            // the stream alive instead of restarting the player.
+            return false;
+        }
         if (ret < 0) {
             char errStr[AV_ERROR_MAX_STRING_SIZE];
             av_strerror(ret, errStr, AV_ERROR_MAX_STRING_SIZE);
-            throw runtime_error("发送视频包出错 " + string(errStr));
+            throw runtime_error("发送视频包出错 " + string(errStr) + " (" + std::to_string(ret) + ")");
         }
 
         if (isHwDecoderEnable) {
@@ -344,7 +357,7 @@ bool FFmpegDecoder::OpenAudio() {
 
 void FFmpegDecoder::CloseVideo() {
     if (pVideoCodecCtx) {
-        avcodec_close(pVideoCodecCtx);
+        avcodec_free_context(&pVideoCodecCtx);
         pVideoCodecCtx = nullptr;
         videoStreamIndex = 0;
     }
@@ -352,7 +365,7 @@ void FFmpegDecoder::CloseVideo() {
 
 void FFmpegDecoder::CloseAudio() {
     if (pAudioCodecCtx) {
-        avcodec_close(pAudioCodecCtx);
+        avcodec_free_context(&pAudioCodecCtx);
         pAudioCodecCtx = nullptr;
         audioStreamIndex = 0;
     }

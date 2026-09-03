@@ -1,12 +1,14 @@
-﻿#include "src/QmlNativeAPI.h"
+#include "src/QmlNativeAPI.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <player/QQuickRealTimePlayer.h>
 
+#ifdef _WIN32
 #pragma comment(lib, "ws2_32.lib")
+#endif
 
-#ifdef DEBUG_MODE
+#if defined(DEBUG_MODE) && defined(_WIN32)
 #include <DbgHelp.h>
 #pragma comment(lib, "DbgHelp.lib")
 // 创建Dump文件
@@ -33,7 +35,7 @@ LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException) {
 #endif
 
 int main(int argc, char *argv[]) {
-#ifdef DEBUG_MODE
+#if defined(DEBUG_MODE) && defined(_WIN32)
     SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)ApplicationCrashHandler);
 #endif
 
