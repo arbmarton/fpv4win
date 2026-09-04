@@ -90,6 +90,9 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 
 if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /MP)
+else ()
+    # The driver sources under 3rd/ expect the Windows basic types; see the header.
+    target_compile_options(${PROJECT_NAME} PRIVATE -include "${CMAKE_SOURCE_DIR}/src/win_types_compat.h")
 endif ()
 
 if (WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
