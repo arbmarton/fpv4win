@@ -12,6 +12,13 @@
 #include <thread>
 #include <vector>
 
+struct UsbDeviceId {
+    uint8_t bus;
+    uint8_t address;
+    std::vector<uint8_t> portPath; // e.g., {2, 4}
+    std::string serial;
+};
+
 class WFBReceiver {
 public:
     WFBReceiver();
@@ -22,9 +29,13 @@ public:
     }
     std::vector<std::string> GetDongleList();
     bool Start(const std::string &vidPid, uint8_t channel, int channelWidth, const std::string &keyPath);
+    bool StartWithDeviceId(const std::string &vidPid, const UsbDeviceId usbDeviceId, uint8_t channel, int channelWidth, const std::string &keyPath);
     bool Stop();
     void handle80211Frame(const Packet &pkt);
     void handleRtp(uint8_t *payload, uint16_t packet_size);
+    libusb_device_handle* openSpecificDevice(libusb_context* ctx,
+        uint16_t vid, uint16_t pid,
+        const UsbDeviceId& targetId);
 
 protected:
     libusb_context *ctx;

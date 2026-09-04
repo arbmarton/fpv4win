@@ -11,6 +11,7 @@
 #include "Mp4Encoder.h"
 
 class TItemRender;
+class FrameSocketSender;
 
 class QQuickRealTimePlayer : public QQuickFramebufferObject {
     Q_OBJECT
@@ -119,4 +120,6 @@ public:
     int m_videoHeight {};
     int m_videoFormat {};
     bool m_infoChanged = false;
+
+    FrameSocketSender* frameSender;
 };

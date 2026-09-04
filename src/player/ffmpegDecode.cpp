@@ -36,6 +36,7 @@ bool FFmpegDecoder::OpenInput(string &inputFile) {
 
     // 打开输入
     if (avformat_open_input(&pFormatCtx, inputFile.c_str(), nullptr, &param) != 0) {
+        std::cout << "failed to open avformat input\n";
         CloseInput();
         return false;
     }

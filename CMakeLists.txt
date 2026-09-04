@@ -88,6 +88,10 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         "${CMAKE_SOURCE_DIR}/gs.key"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/gs.key")
 
+if (MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /MP)
+endif ()
+
 if (WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(DEBUG_SUFFIX)
     if (MSVC AND CMAKE_BUILD_TYPE MATCHES "Debug")
