@@ -14,4 +14,4 @@ add_executable(test_render test_render.cpp
         ${PLAYER_SRC_DIR}/GifEncoder.cpp
         ${PLAYER_SRC_DIR}/Mp4Encoder.cpp)
 target_include_directories(test_render PRIVATE ${CMAKE_SOURCE_DIR}/src ${PLAYER_SRC_DIR})
-target_link_libraries(test_render Qt5::Quick ${FFMPEG_LIBRARIES} PkgConfig::SDL2)
+target_link_libraries(test_render Qt5::Quick ${FFMPEG_LIBRARIES} ${SDL2_TARGET})

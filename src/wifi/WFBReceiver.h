@@ -4,6 +4,10 @@
 
 #ifndef WFBRECEIVER_H
 #define WFBRECEIVER_H
+#ifdef _WIN32
+// libusb.h includes the legacy <winsock.h>, which clashes with a later <winsock2.h>; winsock2 must come first
+#include <winsock2.h>
+#endif
 #include "FrameParser.h"
 #include "Rtl8812aDevice.h"
 #include <QUdpSocket>

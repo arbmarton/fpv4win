@@ -7,40 +7,55 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-unset(Qt6_DIR CACHE)
-unset(Qt6Core_DIR CACHE)
-unset(Qt6Quick_DIR CACHE)
-set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/qt@5")
-set(Qt5_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5")
-set(Qt5Core_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5Core")
-set(Qt5Quick_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5Quick")
-set(Qt5Multimedia_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5Multimedia")
-include_directories("/opt/homebrew/opt/qt@5/include")
-include_directories("/opt/homebrew/opt/qt@5/include/QtCore")
-include_directories("/opt/homebrew/opt/qt@5/include/QtQuick")
+if(APPLE)
+    unset(Qt6_DIR CACHE)
+    unset(Qt6Core_DIR CACHE)
+    unset(Qt6Quick_DIR CACHE)
+    # Append rather than overwrite: pkg_check_modules searches <prefix>/lib/pkgconfig for every CMAKE_PREFIX_PATH entry
+    list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/qt@5")
+    set(Qt5_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5")
+    set(Qt5Core_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5Core")
+    set(Qt5Quick_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5Quick")
+    set(Qt5Multimedia_DIR "/opt/homebrew/opt/qt@5/lib/cmake/Qt5Multimedia")
+    include_directories("/opt/homebrew/opt/qt@5/include")
+    include_directories("/opt/homebrew/opt/qt@5/include/QtCore")
+    include_directories("/opt/homebrew/opt/qt@5/include/QtQuick")
+endif()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(PkgConfig REQUIRED)
 
-# Header search path for the FFmpeg libraries (FFMPEG_INCLUDE_DIRS is consumed below)
-pkg_check_modules(FFMPEG QUIET libavcodec libavformat libavutil libswscale libswresample)
-find_library(AVFORMAT_LIBRARY avformat PATHS /opt/homebrew/lib)
-find_library(AVCODEC_LIBRARY avcodec PATHS /opt/homebrew/lib)
-find_library(AVUTIL_LIBRARY avutil PATHS /opt/homebrew/lib)
-find_library(SWSCALE_LIBRARY swscale PATHS /opt/homebrew/lib)
-find_library(SWRESAMPLE_LIBRARY swresample PATHS /opt/homebrew/lib)
+if(APPLE)
+    # Header search path for the FFmpeg libraries (FFMPEG_INCLUDE_DIRS is consumed below)
+    pkg_check_modules(FFMPEG QUIET libavcodec libavformat libavutil libswscale libswresample)
+    find_library(AVFORMAT_LIBRARY avformat PATHS /opt/homebrew/lib)
+    find_library(AVCODEC_LIBRARY avcodec PATHS /opt/homebrew/lib)
+    find_library(AVUTIL_LIBRARY avutil PATHS /opt/homebrew/lib)
+    find_library(SWSCALE_LIBRARY swscale PATHS /opt/homebrew/lib)
+    find_library(SWRESAMPLE_LIBRARY swresample PATHS /opt/homebrew/lib)
 
-set(FFMPEG_LIBRARIES
-    ${AVFORMAT_LIBRARY}
-    ${AVCODEC_LIBRARY}
-    ${AVUTIL_LIBRARY}
-    ${SWSCALE_LIBRARY}
-    ${SWRESAMPLE_LIBRARY}
-)
-pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
-include_directories("/opt/homebrew/include/SDL2/")
-pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
+    set(FFMPEG_LIBRARIES
+        ${AVFORMAT_LIBRARY}
+        ${AVCODEC_LIBRARY}
+        ${AVUTIL_LIBRARY}
+        ${SWSCALE_LIBRARY}
+        ${SWRESAMPLE_LIBRARY}
+    )
+    include_directories("/opt/homebrew/include/SDL2/")
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+    pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
+    set(SDL2_TARGET PkgConfig::SDL2)
+    set(SODIUM_TARGET PkgConfig::SODIUM)
+else()
+    # Use vcpkg's CMake packages rather than pkg-config: with a multi-config generator (Visual Studio) the vcpkg
+    # toolchain puts its debug tree first on CMAKE_PREFIX_PATH, so pkg-config would link the debug builds (SDL2d.dll)
+    find_package(FFmpeg REQUIRED)
+    find_package(SDL2 CONFIG REQUIRED)
+    find_package(unofficial-sodium CONFIG REQUIRED)
+    set(SDL2_TARGET SDL2::SDL2)
+    set(SODIUM_TARGET unofficial-sodium::sodium)
+endif()
 pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 include_directories(${FFMPEG_INCLUDE_DIRS})
 
@@ -73,9 +88,9 @@ add_executable(${PROJECT_NAME} ${SRC_LIST} qml.qrc)
 target_link_libraries(${PROJECT_NAME}
         Qt5::Quick
         ${FFMPEG_LIBRARIES}
-        PkgConfig::SDL2
+        ${SDL2_TARGET}
         PkgConfig::LIBUSB
-        PkgConfig::SODIUM)
+        ${SODIUM_TARGET})
 
 option(FPV4WIN_BUILD_TESTS "Build decoder/renderer test programs (see tests/run_tests.sh)" OFF)
 if (FPV4WIN_BUILD_TESTS)
@@ -87,6 +102,11 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/gs.key"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/gs.key")
+
+if (WIN32)
+    # Stops <windows.h> from pulling in the legacy winsock.h, which clashes with the winsock2.h used by the socket code
+    target_compile_definitions(${PROJECT_NAME} PRIVATE WIN32_LEAN_AND_MEAN)
+endif ()
 
 if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /MP)
