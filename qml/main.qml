@@ -19,6 +19,8 @@ ApplicationWindow {
         id: player
         width: parent.width - 200
         height:parent.height
+        // GPU decoding is on unless config.ini has "hwDecode=0" under [config]
+        hwDecode: NativeApi.GetConfig()["config.hwDecode"] !== "0"
         property var playingFile
         Component.onCompleted: {
             NativeApi.onRtpStream.connect((sdpFile)=>{
@@ -326,8 +328,8 @@ ApplicationWindow {
                     nameFilters: ["Key Files (*.key)"]
 
                     onAccepted: {
-                        keySelector.text = file;
-                        keySelector.text = keySelector.text.replace('file:///','')
+                        // Windows: file:///C:/x -> C:/x ; POSIX: file:///home/x -> /home/x
+                        keySelector.text = file.toString().replace('file:///', Qt.platform.os === "windows" ? '' : '/')
                     }
                 }
                 Button {

@@ -33,36 +33,36 @@ inline uint32_t htobe32(uint32_t host_32bits) {
 }
 
 inline uint64_t be64toh(uint64_t big_endian_64bits) {
-    // 如果本地字节序是小端，需要进行转换
 #if defined(_WIN32) || defined(_WIN64)
-    // 如果是 Windows 平台
     return _byteswap_uint64(big_endian_64bits);
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    // GCC/Clang on a little-endian host (e.g. Apple Silicon, x86 macOS/Linux)
+    return __builtin_bswap64(big_endian_64bits);
 #else
-    // 如果是其他平台，假设是大端或者已经有对应的函数实现
     return big_endian_64bits;
 #endif
 }
 
 // 定义 be32toh 函数，将大端 32 位整数转换为主机字节顺序
 inline uint32_t be32toh(uint32_t big_endian_32bits) {
-    // 如果本地字节序是小端，需要进行转换
 #if defined(_WIN32) || defined(_WIN64)
-    // 如果是 Windows 平台，使用 _byteswap_ulong 函数
     return _byteswap_ulong(big_endian_32bits);
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    // GCC/Clang on a little-endian host (e.g. Apple Silicon, x86 macOS/Linux)
+    return __builtin_bswap32(big_endian_32bits);
 #else
-    // 如果是其他平台，假设是大端或者已经有对应的函数实现
     return big_endian_32bits;
 #endif
 }
 
 // 定义 be16toh 函数，将大端 16 位整数转换为主机字节顺序
 inline uint16_t be16toh(uint16_t big_endian_16bits) {
-    // 如果本地字节序是小端，需要进行转换
 #if defined(_WIN32) || defined(_WIN64)
-    // 如果是 Windows 平台，使用 _byteswap_ushort 函数
     return _byteswap_ushort(big_endian_16bits);
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    // GCC/Clang on a little-endian host (e.g. Apple Silicon, x86 macOS/Linux)
+    return __builtin_bswap16(big_endian_16bits);
 #else
-    // 如果是其他平台，假设是大端或者已经有对应的函数实现
     return big_endian_16bits;
 #endif
 }

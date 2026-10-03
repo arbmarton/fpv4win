@@ -1,4 +1,4 @@
-﻿/*
+/*
     It is FFmpeg decoder class. Sample for article from unick-soft.ru
 */
 
@@ -68,13 +68,23 @@ public:
     int GetAudioChannelCount() const { return pAudioCodecCtx->ch_layout.nb_channels; }
     // 音频样本格式
     AVSampleFormat GetAudioSampleFormat() const { return AV_SAMPLE_FMT_S16; }
-    // 视频帧格式
+    // 视频帧格式 (format of the frames returned by GetNextFrame)
     AVPixelFormat GetVideoFrameFormat() const {
+        if (outputPixFmt != AV_PIX_FMT_NONE) {
+            return outputPixFmt;
+        }
         if (isHwDecoderEnable) {
             return AV_PIX_FMT_NV12;
         }
-        return pVideoCodecCtx->pix_fmt;
+        return pVideoCodecCtx ? pVideoCodecCtx->pix_fmt : AV_PIX_FMT_NONE;
     }
+    // Allow/disallow GPU decoding (VideoToolbox on macOS, D3D11VA on Windows, VAAPI on Linux).
+    // Must be called before OpenInput(). Enabled by default.
+    void EnableHwDecoder(bool enable) { hwDecoderAllowed = enable; }
+    // True when the currently open video stream is actually being decoded by the GPU.
+    bool IsHwDecoderEnabled() const { return isHwDecoderEnable; }
+    // Number of video packets the decoder rejected (packet loss / corruption) since OpenInput().
+    uint64_t GetDroppedPacketCount() const { return droppedPackets; }
     // 获取音频frame大小
     int GetAudioFrameSamples() { return pAudioCodecCtx->sample_rate * 2 / 25; }
     // 有元
@@ -167,13 +177,21 @@ private:
     shared_ptr<AVFifo> audioFifoBuffer;
 
     // 硬件解码
-    enum AVHWDeviceType hwDecoderType;
+    enum AVHWDeviceType hwDecoderType = AV_HWDEVICE_TYPE_NONE;
+    bool hwDecoderAllowed = true;
     bool isHwDecoderEnable = false;
-    enum AVPixelFormat hwPixFmt;
+    enum AVPixelFormat hwPixFmt = AV_PIX_FMT_NONE;
     AVBufferRef *hwDeviceCtx = nullptr;
-    volatile bool dropCurrentVideoFrame = false;
-    // Hardware frame
+    // Hardware frame (decoder output surface before it is copied to system memory)
     shared_ptr<AVFrame> hwFrame;
+    // Pixel format of the frames handed out by GetNextFrame (known after the first decoded frame)
+    enum AVPixelFormat outputPixFmt = AV_PIX_FMT_NONE;
+    // Video packets rejected by the decoder
+    uint64_t droppedPackets = 0;
+    // Move a decoded frame (hardware surface or software frame) into a frame the renderer can use
+    bool OutputFrame(AVFrame *decoded, shared_ptr<AVFrame> &pOutFrame);
+    // Account for a packet/picture the decoder rejected
+    void DropPacket();
 };
 
 #endif

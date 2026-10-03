@@ -1,6 +1,8 @@
-﻿
+
 #include "QQuickRealTimePlayer.h"
 #include "JpegEncoder.h"
+#include "FrameSocketSender.h"
+#include <QDebug>
 #include <QDir>
 #include <QOpenGLFramebufferObject>
 #include <QQuickWindow>
@@ -59,7 +61,12 @@ void TItemRender::synchronize(QQuickFramebufferObject *item) {
         }
         bool got = false;
         shared_ptr<AVFrame> frame = pItem->getFrame(got);
-        if (got && frame->linesize[0]) {
+        if (got && frame->linesize[0] && frame->width > 0 && frame->height > 0) {
+            // Keep the item's notion of the stream geometry in sync with what is actually decoded
+            // (the decoder may switch to software / a different pixel format, or the camera may
+            // change resolution mid-stream).
+            pItem->onVideoInfoReady(frame->width, frame->height, frame->format);
+            pItem->makeInfoDirty(false);
             m_render.updateTextureData(frame);
         }
     }
@@ -71,6 +78,7 @@ QQuickRealTimePlayer::QQuickRealTimePlayer(QQuickItem *parent)
     SDL_Init(SDL_INIT_AUDIO);
     // 按每秒60帧的帧率更新界面
     startTimer(1000 / 100);
+    frameSender = new FrameSocketSender();
 }
 
 void QQuickRealTimePlayer::timerEvent(QTimerEvent *event) {
@@ -125,6 +133,7 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
     // 启动分析线程
     analysisThread = std::thread([this, playUrl]() {
         auto decoder_ = make_shared<FFmpegDecoder>();
+        decoder_->EnableHwDecoder(hwDecode);
         url = playUrl.toStdString();
         // 打开并分析输入
         bool ok = decoder_->OpenInput(url);
@@ -132,6 +141,8 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
             emit onError("视频加载出错", -2);
             return;
         }
+        qInfo() << "video" << decoder_->GetWidth() << "x" << decoder_->GetHeight()
+                << (decoder_->IsHwDecoderEnabled() ? "hardware (GPU) decoding" : "software decoding");
         decoder = decoder_;
         // 启动解码线程
         decodeThread = std::thread([this]() {
@@ -142,6 +153,12 @@ void QQuickRealTimePlayer::play(const QString &playUrl) {
                     if (!frame) {
                         continue;
                     }
+                    if (!frameSender->isConnected()) {
+                        frameSender->initialize(8888);
+                    }
+                    //SaveFrameAsBMP(frame, "last_frame.bmp");
+                    //frameWriter.sendFrame(frame);
+                    frameSender->sendFrame(frame);
                     {
                         // 解码获取到视频帧,放入帧缓冲队列
                         lock_guard<mutex> lck(mtx);
@@ -220,6 +237,7 @@ void QQuickRealTimePlayer::setMuted(bool muted) {
 
 QQuickRealTimePlayer::~QQuickRealTimePlayer() {
     stop();
+    delete frameSender;
 }
 
 QString QQuickRealTimePlayer::captureJpeg() {

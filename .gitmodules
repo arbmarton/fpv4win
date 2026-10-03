@@ -3,4 +3,4 @@
 	url = https://github.com/OpenIPC/devourer.git
 [submodule "3rd/rtl8812au-monitor-pcap"]
 	path = 3rd/rtl8812au-monitor-pcap
-	url = https://github.com/TalusL/rtl8812au-monitor-pcap.git
+	url = https://github.com/arbmarton/rtl8812au-monitor-pcap.git
